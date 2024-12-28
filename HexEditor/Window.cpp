@@ -209,4 +209,52 @@ void Window::OnDestroy(HWND hwnd)
 	PostQuitMessage(0);		// Sendet eine WM_QUIT Nachricht, um die Anwendung zu beenden
 }
 
+// Methode zur Handhabung der Größenänderung des Fensters (WM_SIZE)
+void Window::OnSize(HWND hwnd, UINT state, int cx, int cy)
+{
+	// Anpassung der Statusleiste an die neue Fenstergröße
+	if (hStatus)
+	{
+		SendMessage(hStatus, WM_SIZE, 0, 0);
+	}
+
+	// Berechnung der Anzahl der sichtbaren Zeilen basierend auf der Fensterhöhe
+	int visibleLines = (cy - lineHeight) / lineHeight;
+
+	// Berechnung der Gesamtanzahl der Zeilen basierend auf der Dateigröße und Bytes pro Zeile
+	int totalLines = (hexEditor.GetSize() + bytesPerLine - 1) / bytesPerLine;
+
+	// Bestimmung der maximalen vertikalrn Scrollposition
+	maxScrollY = max(0, totalLines - visibleLines);
+
+	// Berechnung der Breite der hexadezimalen Datenanzeige( Adresse + Hex + ASCII)
+	int hexDataWidth = addressWidth + (3 * bytesPerLine) + bytesPerLine + 1;
+
+	// Berechnung der sichtbaren Spalten basierend auf der Fensterbreite
+	int visibleColumns = cx / charWidth;
+
+	// Bestimmung der maximalen horizontalen Scrollposition
+	maxScrollX = max(0, hexDataWidth - visibleColumns);
+
+
+	// Einstellen der Scroll-Informationen für die vertikale Scrollbar
+	SCROLLINFO siV = { sizeof(SCROLLINFO) };
+	siV.fMask = SIF_RANGE | SIF_PAGE;
+	siV.nMin = 0;
+	siV.nMax = maxScrollY;
+	siV.nPage = visibleLines;
+	SetScrollInfo(hwnd, SB_VERT, &siV, TRUE);
+
+	// Einstellen der Scroll-Informationen für die horizontale Scrollbar
+	SCROLLINFO siH = { sizeof(SCROLLINFO) };
+	siH.fMask = SIF_RANGE | SIF_PAGE;
+	siH.nMin = 0;
+	siH.nMax = hexDataWidth;
+	siH.nPage = visibleColumns;
+	SetScrollInfo(hwnd, SB_HORZ, &siH, TRUE);
+
+	// Neuzeichnen des gesamten Fensters
+	InvalidateRect(hwnd, NULL, TRUE);
+}
+
 

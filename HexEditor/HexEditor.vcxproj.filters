@@ -24,6 +24,9 @@
     <ClInclude Include="HexEditor.h">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="Window.h">
+      <Filter>include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc">
@@ -35,6 +38,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="HexEditor.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="Window.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

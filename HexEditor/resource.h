@@ -1,0 +1,12 @@
+#ifndef RESOURCE_H
+#define RESOURCE_H
+
+#define ID_MENU_FILE_OPEN	9001
+#define ID_MENU_FILE_SAVE	9002
+#define ID_MENU_FILE_EXIT	9003
+#define IDR_MENU1			100
+
+
+
+#endif // RESOURCE_H
+

@@ -257,4 +257,240 @@ void Window::OnSize(HWND hwnd, UINT state, int cx, int cy)
 	InvalidateRect(hwnd, NULL, TRUE);
 }
 
+// Methode zur Handhabung der vertikalen Srollaktion (WM_SCROLL)
+void Window::OnVScroll(HWND hwnd, HWND hWndCtl, UINT code, int pos)
+{
+	// Abrufen der aktuellen Scroll-Information
+	SCROLLINFO si = { sizeof(si) };
+	si.fMask = SIF_ALL;
+	GetScrollInfo(hwnd, SB_VERT, &si);
+	int yOld = scrollY;		// Speichern der alten Scrollposition
+
+	// Verarbeiten der Scrollaktion basierend auf dem Code
+	switch (code)
+	{
+	case SB_TOP:
+		scrollY = 0;
+		break;
+	case SB_BOTTOM:
+		scrollY = maxScrollY;								// Scrollen zum Ende
+		break;
+	case SB_LINEUP:
+		scrollY = max(scrollY - 1, 0);						// Eine Zeile nach oben scrollen
+		break;
+	case SB_LINEDOWN:
+		scrollY = min(scrollY + 1, maxScrollY);				// Eine Zeile nach unten scrollen
+		break;
+	case SB_PAGEUP:
+		scrollY = max(scrollY - si.nPage, 0);				// Eine Seite nach oben scrollen
+		break;
+	case SB_PAGEDOWN:
+		scrollY = min(scrollY + si.nPage, maxScrollY);		// Eine Seite nach unten scrollen
+		break;
+	case SB_THUMBTRACK:
+		scrollY = si.nTrackPos;								// Scrollen zu einer Position, die durch Ziehen des Scroll-Griffs bestimmt wird
+		break;
+	}
+
+
+	// Wenn die Scrollposition sich geändert hat, aktualisieren und neu zeichnen
+	if (scrollY != yOld)
+	{
+		SetScrollPos(hwnd, SB_VERT, scrollY, TRUE);		// Setzen der neuen Scrollposition
+		InvalidateRect(hwnd, NULL, TRUE);				// Neuzeichnen des Fensters
+	}
+}
+
+// Methode zur Handhabung der horizontalen Scrollaktion (WM_HSCROLL)
+void Window::OnHScroll(HWND hwnd, HWND hWndCtl, UINT code, int pos)
+{
+	// Abrufen der aktuellen Scroll-Informationen
+	SCROLLINFO si = { sizeof(si) };
+	si.fMask = SIF_ALL;
+	GetScrollInfo(hwnd, SB_HORZ, &si);
+	int xOld = scrollX; // Speichern der alten Scrollposition
+
+	// Verarbeiten der Scrollaktion basierend auf dem Code
+	switch (code)
+	{
+	case SB_LEFT:
+		scrollX = 0; // Scrollen zum linken Ende
+		break;
+	case SB_RIGHT:
+		scrollX = maxScrollX; // Scrollen zum rechten Ende
+		break;
+	case SB_LINELEFT:
+		scrollX = max(scrollX - 10, 0); // Um 10 Einheiten nach links scrollen
+		break;
+	case SB_LINERIGHT:
+		scrollX = min(scrollX + 10, maxScrollX); // Um 10 Einheiten nach rechts scrollen
+		break;
+	case SB_PAGELEFT:
+		scrollX = max(scrollX - si.nPage, 0); // Eine Seite nach links scrollen
+		break;
+	case SB_PAGERIGHT:
+		scrollX = min(scrollX + si.nPage, maxScrollX); // Eine Seite nach rechts scrollen
+		break;
+	case SB_THUMBTRACK:
+		scrollX = si.nTrackPos; // Scrollen zu einer Position, die durch Ziehen des Scroll-Griffs bestimmt wird
+		break;
+	}
+
+	// Wenn die Scrollposition sich geändert hat, aktualisieren und neu zeichnen
+	if (scrollX != xOld)
+	{
+		SetScrollPos(hwnd, SB_HORZ, scrollX, TRUE); // Setzen der neuen Scrollposition
+		InvalidateRect(hwnd, NULL, TRUE);           // Neuzeichnen des Fensters
+	}
+}
+
+// Methode zur Handhabung von Befehlen (z.B. Menüaktion) (WM_COMMAND)
+void Window::OnCommand(HWND hwnd, int id, HWND hWndCtl, UINT codeNotify)
+{
+	switch (id)
+	{
+		case ID_MENU_FILE_OPEN:
+		{
+			// Öffnen eines Datei-Dialogs
+			wstring filename = OpenFileDialog(hwnd);
+			if (!filename.empty())
+			{
+				// Laden der ausgewählten Datei im HexEditor
+				if (hexEditor.LoadFile(filename))
+				{
+					// Aktualisieren der Scrollbars basierend auf der neuen Dateigröße
+					RECT clientRect;
+					GetClientRect(hwnd, &clientRect);
+					OnSize(hwnd, 0, clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
+				}
+				else
+				{
+					// Fehlermeldung anzeigen, wenn die Datei nicht geöffnet werden konnte
+					MessageBox(hwnd, L"Datei konnte nicht geöffnet werden.", L"Fehler", MB_OK | MB_ICONERROR);
+				}
+			}
+		}
+		break;
+
+		case ID_MENU_FILE_SAVE:
+		{
+			// Öffnen eines Datei-Speichern-Dialogs
+			wstring filename = OpenSaveFileDialog(hwnd);
+			if (!filename.empty())
+			{
+				// Speichern der aktuellen Daten im HexEditor
+				if (!hexEditor.SaveFile(filename))
+				{
+					// Fehlermeldung anzeigen, wenn die Datei nicht gespeichert werden konnte
+					MessageBox(hwnd, L"Datei konnte nicht gespeichert werden.", L"Fehler", MB_OK | MB_ICONERROR);
+				}
+			}
+		}
+		break;
+
+		case ID_MENU_FILE_EXIT:
+			PostQuitMessage(0); // Beenden der Anwendung
+			break;
+	}
+}
+
+// Methode zur Handhabung von Mausklicks mit der linken Taste (WM_LBUTTONDOWN)
+void Window::OnLButtonDown(HWND hwnd, int x, int y, UINT keyFlags)
+{
+	// Umrechnung der Mausklick-Position basierend auf der aktuellen Scrollposition
+	int actualX = x / charWidth + scrollX;
+	int actualY = y / lineHeight + scrollY;
+
+	// Berechnung, welche Zeile und Spalte angeclickt wurde
+	int line = actualY;
+	int column = (actualX - (addressWidth / charWidth)) / 3;		// 3 Zeichen pro Byte (z.B "FF ")
+
+	// Berechnung des Byte-Index basierend auf Zeile und Spalte
+	size_t index = line * bytesPerLine + column;
+	if (index < hexEditor.GetSize())
+	{
+		selectedIndex = index;		// Setzen des ausgewählten Byte-Index
+		isEditing = true;			// Aktivieren des Bearbeitungsmodus
+		editPos = 0;				// Initialisieren des Bearbeitungsmodus
+		editBuffer[0] = L'\0';		// Leeren des Bearbeitungsbuffers
+		editBuffer[1] = L'\0';
+		editBuffer[2] = L'\0';
+
+		// Setzen des Fokus auf das Fenster, um Tastatureingaben zu empfangen
+		SetFocus(hwnd);
+		InvalidateRect(hwnd, NULL, TRUE);		// Neuzeichnen des Fensters
+		UpdateStatusBar();						// Aktualisieren der Statusleiste
+	}
+}
+
+// Methode zur Handhabung von Zeichen-Eingaben (WM_CHAR)
+void Window::OnChar(HWND hwnd, TCHAR ch, int cRepeat)
+{
+	// Überprüfung, ob der Bearbeitungsmodus aktiv ist und der gewählte Index gültig ist
+	if (isEditing && selectedIndex < hexEditor.GetSize())
+	{
+		if (ch == VK_BACK)
+		{
+			// Bearbeitung der Rücktaste (Löschen des letzten eingegebenen Zeichens)
+			if (editPos > 0)
+			{
+				editPos--;
+				editBuffer[editPos] = L'\0';		// Entfernen des letzten Zeichens
+				InvalidateRect(hwnd, NULL, TRUE);	// Neuzeichnen des Fensters
+			}
+		}
+		else if (isxdigit(ch) && editPos < 2)
+		{
+			// Überprüfung, ob das eingegebene Zeichen ein hexadezimaler Wert ist und der Bearbeitungsbuffer noch Platz hat
+			editBuffer[editPos++] = towupper(ch);		// Speichern des eingegebenen Zeichens in Großbuchstaben
+			editBuffer[editPos] = L'\0';				// Null-terminieren des Buffers
+
+
+			if (editPos == 2)
+			{
+				// Wenn zwei hexadezimale Zeichen eingegeben wurden, konvertiere sie in einen Byte-Wert
+				wchar_t temp[3] = { editBuffer[0], editBuffer[1], L'\0' };
+				unsigned int byte;
+				swscanf_s(temp, L"%x", &byte); // Lesen des hexadezimalen Werts
+
+				// Setzen des Byte-Werts im HexEditor
+				hexEditor.SetByte(selectedIndex, static_cast<unsigned char>(byte));
+
+				// Beenden des Bearbeitungsmodus
+				isEditing = false;
+				selectedIndex = SIZE_MAX;
+			}
+
+			// Neuzeichnen des Fensters und Aktualisieren der Statusleiste
+			InvalidateRect(hwnd, NULL, TRUE);
+			UpdateStatusBar();
+		}
+	}
+}
+
+// Methode zur Aktualisierung der Statusleiste mit Informationen zur aktuellen Auswahl
+void Window::UpdateStatusBar()
+{
+	if (hStatus)
+	{
+		wstring status;
+		if (selectedIndex < hexEditor.GetSize())
+		{
+			// Formatieren des Status-Texts mit der Adresse un dem Byte-Wert
+			wchar_t buffer[100];
+			swprintf_s(buffer, 100, L"Adresse: 0x%08llX  Byte: %02X", selectedIndex, hexEditor.GetByte(selectedIndex));
+			status = buffer;
+		}
+		else
+		{
+			status = L"Keine Auswahl"; // Kein ausgewähltes Byte
+		}
+
+		// Setzen des Textes in der Statusleiste
+		SendMessage(hStatus, SB_SETTEXT, 0, (LPARAM)status.c_str());
+	}
+}
+
+
+
 

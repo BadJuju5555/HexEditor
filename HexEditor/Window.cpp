@@ -5,6 +5,7 @@
 #include <commdlg.h>		// Funktionen für Common Dialogs (Öffnen/Speichern)
 #include <commctrl.h>		// Funktionen für Common Controls (Status Bar)
 #include <string>
+#include <windowsx.h>
 #include <algorithm>
 
 using namespace std;
@@ -491,6 +492,186 @@ void Window::UpdateStatusBar()
 	}
 }
 
+// Methode zur Handhabung des Paint-Events (WM_PAINT)
+void Window::OnPaint(HWND hwnd)
+{
+	PAINTSTRUCT ps;
+	// Beginnt mit Painting und erhält den Geräte-Kontext
+	HDC hdc = BeginPaint(hwnd, &ps);
+
+	// Setzen des Mapping-Modus auf MM_Text (Pixel-basierte Koordinaten)
+	SetMapMode(hdc, MM_TEXT);
+	// Verchieben des ViewPort-Origins basierend auf der Scrollposition
+	SetViewportOrgEx(hdc, -scrollX * charWidth, -scrollY * lineHeight, NULL);
+
+	int y = 10;		// Startposition Y
+	int x = 10;		// Startposition X
+
+	const vector<unsigned char>& data = hexEditor.GetData(); // Abrufen der Daten vom HexEditor
+
+	wchar_t buffer[100];	//Puffer für formatierten Text
+	wstring line;			// String zum Aufbau einer Zeile
+
+	int startLine = scrollY; // Startzeile basierend auf der Scrollposition
+	RECT clientRect;
+	GetClientRect(hwnd, &clientRect); // Abrufen der Clientgröße
+	int clientHeight = clientRect.bottom - clientRect.top - lineHeight;		// Verfügbare Höhe für den Inhalt (abzüglich Statusleiste)
+	int visibleLines = clientHeight / lineHeight;		// Berechnung der sichtbaren Zeilen
+
+	// Schleife zum zeichnen der Sichtbaren Zeilen
+	for (size_t i = startLine * bytesPerLine; i < data.size() && (y < clientHeight); i += bytesPerLine)
+	{
+		line.clear();	// Leeren des Zeilen-Strings
+
+		// Adresse der aktuellen Zeile
+		swprintf_s(buffer, 100, L"%08llX: ", i);
+		line += buffer;
+
+		// Zeichnen der Hex-Daten
+		for (size_t j = 0; j < bytesPerLine; j++)
+		{
+			if (i + j < data.size())
+			{
+				swprintf_s(buffer, 100, L"%02X ", data[i + j]); // Formatieren des Bytes als Hexadezimalwert
+			}
+			else
+			{
+				wcscat_s(buffer, L""); // Füllen mit Leerzeichen, wenn kein Byte vorhanden ist
+			}
+
+			line += buffer;
+		}
+
+		// Zeichnen der ASCII-Daten
+		line += L" ";
+		for (size_t j = 0; j < bytesPerLine; j++)
+		{
+			if (i + j < data.size())
+			{
+				unsigned char c = data[i + j];
+
+				if (c >= 32 && c <= 126)
+				{
+					swprintf_s(buffer, 100, L"%c", c); // Drucken des ASCII-Zeichens, wenn druckbar
+				}
+				else
+				{
+					line += L"."; // Ersetzen nicht druckbarer Zeichen durch Punkt
+				}
+				line += buffer;
+			}
+			else
+			{
+				line += L" ";	// Leerzeichen wenn kein Byte vorhanden ist
+			}
+		}
+
+		// Zeichnen der gesamten Zeile(Adresse + Hex + ASCII)
+		TextOut(hdc, x, y, line.c_str(), static_cast<int>(line.length()));
+
+		// Hervorheben des ausgewählten Bytes, wenn im Bearbeitungsmodus
+		if (isEditing && i <= selectedIndex && selectedIndex < i + bytesPerLine)
+		{
+			int relativeIndex = selectedIndex - i;			// Position des Bytes innerhalb der Zeile
+			int hexStartX = x + addressWidth;				// Startposition der Hex-Daten
+			int byteX = hexStartX + relativeIndex * 3;		// Position des Bytes in der Zeile
+
+			// Definieren des Rechtecks zum Hervorheben
+			RECT highlightRect;
+			highlightRect.left = byteX * charWidth;
+			highlightRect.top = y;
+			highlightRect.right = (byteX + 2) * charWidth;
+			highlightRect.bottom = y + lineHeight;
+
+			// Erstellen eines gelben Pinsels
+			HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 0));		// Gelber Hintergrund
+			FillRect(hdc, &highlightRect, hBrush);					// Füllen des Rechtecks
+			DeleteObject(hBrush);									// Löschen des Pinsels
+
+			// Zeichnen des bearbeiteten Byte-Werts
+			wchar_t displayBuffer[3] = { editBuffer[0], editBuffer[1], L'\0' };
+			TextOut(hdc, byteX * charWidth, y, displayBuffer, static_cast<int>(wcslen(displayBuffer)));
+		}
+
+		y += lineHeight;	// Verschieben nach unten für die Nächste Zeile
+	}
+
+	EndPaint(hwnd, &ps);		// Beenden des Malens
+
+}
+
+// Fensterprozedur der Instanz, die die Nachrichten verarbeitet
+LRESULT Window::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (uMsg)
+	{
+		case WM_CREATE:
+		OnCreate(hwnd);			// Behandeln der Fenstermeldung WM_CREATE
+		break;
 
 
+		case WM_SIZE:
+		{
+			UINT state = (UINT)wParam;		// Zustand der Größenänderung(z.B. minimiert, maximiert)
+			int cx = LOWORD(lParam);		// Neue Breite des Clientbereichs
+			int cy = HIWORD(lParam);		// Neue Höhe des Clientbereichs
+			OnSize(hwnd, state, cx, cy);	// AUfruf der OnSize-Methode zur Anpassung
+		}
+		break;
 
+		case WM_VSCROLL:
+		{
+			HWND hWndCtl = (HWND)lParam;			// Handle zur Steuerung, die die Scrollaktion ausgelöst hat
+			UINT code = LOWORD(wParam);				// Code der Scrollaktion(z.B. SB_LINEUP)
+			int pos = HIWORD(wParam);				// Position des Scroll-Griffs
+			OnVScroll(hwnd, hWndCtl, code, pos);	// Aufruf der OnVScroll-Methode
+		}
+		break;
+
+		case WM_HSCROLL:
+		{
+			HWND hWndCtl = (HWND)lParam;			// Handle zur Steuerung, die die Scrollaktion ausgelöst hat
+			UINT code = LOWORD(wParam);				// Code der Scrollaktion (z.B. SB_LINERIGHT)
+			int pos = HIWORD(wParam);				// Position des Scroll-Griffs
+			OnHScroll(hwnd, hWndCtl, code, pos);	// Aufruf der OnHScroll-Methode
+		}
+		break;
+
+		case WM_COMMAND:
+		{
+			int id = LOWORD(wParam);					// ID des Befehls (z.B. Menü-ID)
+			HWND hWndCtl = (HWND)lParam;				// Handle zur Steuerung, die den Befehl ausgelöst hat
+			UINT codeNotify = HIWORD(wParam);			// Benachrichtigungscode
+			OnCommand(hwnd, id, hWndCtl, codeNotify);	// Aufruf der OnCommand-Methode
+		}
+		break;
+
+		case WM_PAINT:
+			OnPaint(hwnd);			// Behandeln der Fenstermeldung WM_PAINT zum Zeichnen des Fensters
+			break;
+
+		case WM_LBUTTONDOWN:
+		{
+			int x = GET_X_LPARAM(lParam); // X-Koordinate des Mausklicks
+			int y = GET_Y_LPARAM(lParam); // Y-Koordinate des Mausklicks
+			OnLButtonDown(hwnd, x, y, (UINT)wParam); // Aufruf der OnLButtonDown-Methode
+		}
+		break;
+
+		case WM_CHAR:
+		{
+			TCHAR ch = (TCHAR)wParam; // Eingegebenes Zeichen
+			int cRepeat = (int)lParam; // Anzahl der Wiederholungen (wird hier nicht verwendet)
+			OnChar(hwnd, ch, cRepeat); // Aufruf der OnChar-Methode zur Bearbeitung des Zeichens
+		}
+		break;
+
+		case WM_DESTROY:
+			OnDestroy(hwnd); // Behandeln der Fenstermeldung WM_DESTROY zum Beenden der Anwendung
+			break;
+
+		default:
+			return DefWindowProc(hwnd, uMsg, wParam, lParam); // Standardbehandlung für alle anderen Nachrichten
+	}
+	return 0;
+}
